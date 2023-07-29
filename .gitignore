@@ -1,0 +1,4 @@
+build/
+*.orig
+openpose_pruned_0_3/
+*.swp
