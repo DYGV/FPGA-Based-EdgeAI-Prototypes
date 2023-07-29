@@ -12,7 +12,7 @@
 ### ZynqMPの場合
 #### 前提条件
 - Arm Cortex-A53のクロスコンパイラでコンパイルすること(コンパイラはPetalinux SDK 2022.2に付属)  
-- AI Model Zooよりdensebox(画像サイズ640\*360向け)をダウンロードし、モデルを`DPUCZDX8G`向けにコンパイル済みであること  
+- Vitis AI Model Zooよりdensebox(画像サイズ640\*360向け)をダウンロードし、モデルを`DPUCZDX8G`向けにコンパイル済みであること  
 
 #### 手順
 1. ビルド  
