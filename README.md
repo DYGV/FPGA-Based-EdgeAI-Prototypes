@@ -1,8 +1,14 @@
 # FPGA-Based-EdgeAI-Prototypes
 エッジコンピューティングのAI処理(エッジAI)を低遅延・低消費電力動作の実現に向けたプロトタイプで、FPGA実行環境内の画像ファイルを推論処理をするプログラムと、クライアントサーバ方式でFPGAマシンに接続して推論処理をするプログラムが含まれる。セットアップしたサーバは[ROS 2ノード(別リポジトリ)](https://github.com/DYGV/ros2tcp-edgeAI)から接続することも可能である。  
+![demo](./docs/demo.gif)
+<p align="center">
+ZynqMPで顔検出(左)、Alveo U50で姿勢推定(右)のTCPサーバを立ち上げてROS 2ノードから通信したとき
+</p>  
+
+## FPGA上で動作する処理  
 - [顔検出](./face_detection)
 - [姿勢推定](./pose_estimation)
-
+  
 ## 動作確認済み環境
   - Zynq UltraScale+ MPSoC カスタムボード (device part: xczu19eg-ffvc1760-2-i)
     - OS: Petalinux 2022.2
