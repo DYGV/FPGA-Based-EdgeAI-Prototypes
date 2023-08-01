@@ -118,8 +118,11 @@ int main(int argc, char *argv[]) {
     std::filesystem::directory_iterator iter(images_directory), end;
     for (const auto &file :
          std::filesystem::directory_iterator(images_directory)) {
-        // setを使って名前順にする
-        contents_of_dir.insert(file.path());
+        if (file.path().extension() == ".jpg" ||
+            file.path().extension() == ".png") {
+            // setを使って名前順にする
+            contents_of_dir.insert(file.path());
+        }
     }
     // setからvectorに変換する
     std::vector<std::string> file_names(contents_of_dir.begin(),
