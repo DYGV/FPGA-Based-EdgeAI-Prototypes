@@ -18,6 +18,7 @@ find_package(Boost 1.77.0 COMPONENTS system serialization)
 include_directories(${Boost_INCLUDE_DIRS})
 
 add_executable(face_detection_simple face_detection_simple.cpp)
+add_executable(face_detection_seq face_detection_seq.cpp)
 add_executable(face_detection_server face_detection_server.cpp)
 add_executable(client client.cpp)
 
@@ -39,6 +40,7 @@ set(FACE_DETECTION_LIBS
     ${Boost_LIBRARIES}
 )
 target_link_libraries(face_detection_simple ${FACE_DETECTION_LIBS})
+target_link_libraries(face_detection_seq ${FACE_DETECTION_LIBS})
 target_link_libraries(face_detection_server ${FACE_DETECTION_LIBS})
 
 target_link_libraries(client ${OpenCV_LIBRARIES} ${Boost_LIBRARIES})
