@@ -106,9 +106,7 @@ void read_image(FrameInfo *data) {
     }
 }
 
-int main(int argc, char *argv[]) {
-    std::string model_ = argv[1];
-    std::string images_directory = argv[2];
+std::vector<std::string> get_file_names(std::string images_directory) {
     std::set<std::filesystem::path> contents_of_dir;
     // ディレクトリからファイル(画像)をすべて取得する
     std::filesystem::directory_iterator iter(images_directory), end;
@@ -116,20 +114,24 @@ int main(int argc, char *argv[]) {
          std::filesystem::directory_iterator(images_directory)) {
         if (file.path().extension() == ".jpg" ||
             file.path().extension() == ".png") {
-            // setを使って名前順にする
             contents_of_dir.insert(file.path());
         }
     }
-    // setからvectorに変換する
     std::vector<std::string> file_names(contents_of_dir.begin(),
                                         contents_of_dir.end());
+    return file_names;
+}
+
+int main(int argc, char *argv[]) {
+    std::string model_ = argv[1];
+    std::string images_directory = argv[2];
 
     model = vitis::ai::FaceDetect::create(model_);
 
     FrameInfo *data = new FrameInfo(cv::Mat());
-    data->file_names = file_names;
+    data->file_names = get_file_names(images_directory);
     data->stop = false;
-    data->file_count = file_names.size();
+    data->file_count = data->file_names.size();
 
     std::thread read_image_thread(read_image, data);
     std::thread face_detect_thread(face_detect, data);
