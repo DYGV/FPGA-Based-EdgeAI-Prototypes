@@ -54,6 +54,9 @@ void pose_estimate(FrameInfo *data) {
         cv::Mat image = data->image_in.front();
         data->image_in.pop();
         lock_in.unlock();
+        if (image.empty()) {
+            continue;
+        }
 
         vitis::ai::OpenPoseResult result = model->run(image);
 

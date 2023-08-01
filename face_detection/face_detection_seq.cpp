@@ -37,25 +37,27 @@ struct FrameInfo {
     std::condition_variable cv_in;
     std::condition_variable cv_result;
     bool stop;
+    unsigned long file_count;
 };
 
 std::unique_ptr<vitis::ai::FaceDetect> model;
 
 void face_detect(FrameInfo *data) {
-    while (true) {
+    while (!data->stop) {
         std::unique_lock<std::mutex> lock_in(data->mtx_in);
-        data->cv_in.wait_for(lock_in, std::chrono::milliseconds(500), 
-                    [&data] { return !data->image_in.empty(); });
-        if(data->stop) {
-            break;
-        }
+        data->cv_in.wait_for(lock_in, std::chrono::milliseconds(500),
+                             [&data] { return !data->image_in.empty(); });
 
+        if (data->image_in.empty() && !data->stop) {
+            continue;
+        }
         cv::Mat image = data->image_in.front();
         data->image_in.pop();
         lock_in.unlock();
-
+        if (image.empty()) {
+            continue;
+        }
         vitis::ai::FaceDetectResult result = model->run(image);
-
         std::unique_lock<std::mutex> lock_result(data->mtx_result);
         data->result.push(result);
         lock_result.unlock();
@@ -64,19 +66,20 @@ void face_detect(FrameInfo *data) {
 }
 
 void show_result(FrameInfo *data) {
-    unsigned long image_count = 0;
-    while (true) {
+    unsigned long frame_count = 0;
+    while (!data->stop) {
         std::unique_lock<std::mutex> lock_result(data->mtx_result);
         data->cv_result.wait_for(lock_result, std::chrono::milliseconds(500),
-                             [&data] { return !data->result.empty(); });
-        if(data->stop) {
-            break;
+                                 [&data] { return !data->result.empty(); });
+        if (data->result.empty() && !data->stop) {
+            continue;
         }
         vitis::ai::FaceDetectResult result = data->result.front();
         data->result.pop();
         lock_result.unlock();
         data->cv_result.notify_one();
-        std::cout << "frame " << ++image_count << ": ";
+        frame_count++;
+        std::cout << "frame " << frame_count << ": ";
         for (const auto &r : result.rects) {
             int x = r.x * result.width;
             int y = r.y * result.height;
@@ -87,6 +90,7 @@ void show_result(FrameInfo *data) {
                       << ", size_row = " << size_row;
         }
         std::cout << std::endl;
+        data->stop = (frame_count == data->file_count);
     }
 }
 
@@ -100,7 +104,6 @@ void read_image(FrameInfo *data) {
         lock_in.unlock();
         data->cv_in.notify_one();
     }
-    data->stop = true;
 }
 
 int main(int argc, char *argv[]) {
@@ -123,6 +126,7 @@ int main(int argc, char *argv[]) {
     FrameInfo *data = new FrameInfo(cv::Mat());
     data->file_names = file_names;
     data->stop = false;
+    data->file_count = file_names.size();
 
     std::thread read_image_thread(read_image, data);
     std::thread face_detect_thread(face_detect, data);
