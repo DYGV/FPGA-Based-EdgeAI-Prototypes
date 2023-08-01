@@ -18,16 +18,9 @@ find_package(Boost 1.77.0 COMPONENTS system serialization)
 include_directories(${Boost_INCLUDE_DIRS})
 
 add_executable(pose_estimation_simple pose_estimation_simple.cpp)
+add_executable(pose_estimation_seq pose_estimation_seq.cpp)
 add_executable(pose_estimation_server pose_estimation_server.cpp)
 add_executable(client client.cpp)
-
-if(CMAKE_BUILD_TYPE MATCHES Debug)
-    target_compile_definitions(pose_estimation_simple PRIVATE DEBUG)
-    target_compile_definitions(pose_estimation_server PRIVATE DEBUG)
-    target_compile_definitions(client PRIVATE DEBUG)
-elseif(CMAKE_BUILD_TYPE MATCHES Latency)
-    target_compile_definitions(client PRIVATE LATENCY)
-endif()
 
 set(POSE_ESTIMATION_LIBS
     vitis_ai_library-openpose
@@ -39,5 +32,6 @@ set(POSE_ESTIMATION_LIBS
 )
 
 target_link_libraries(pose_estimation_simple ${POSE_ESTIMATION_LIBS})
+target_link_libraries(pose_estimation_seq ${POSE_ESTIMATION_LIBS})
 target_link_libraries(pose_estimation_server ${POSE_ESTIMATION_LIBS})
 target_link_libraries(client ${OpenCV_LIBRARIES} ${Boost_LIBRARIES} pthread)
