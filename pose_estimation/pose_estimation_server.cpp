@@ -52,8 +52,9 @@ struct FrameInfo {
 };
 
 std::unique_ptr<vitis::ai::OpenPose> model;
+std::mutex mtx_dpu;
 
-void face_detect(FrameInfo *data) {
+void pose_estimate(FrameInfo *data) {
     while (true) {
         std::unique_lock<std::mutex> lock_in(data->mtx_in);
         data->cv_in.wait(lock_in, [&data] { return !data->image_in.empty(); });
@@ -62,7 +63,9 @@ void face_detect(FrameInfo *data) {
         data->image_in.pop();
         lock_in.unlock();
 
+        std::unique_lock<std::mutex> lock_dpu(mtx_dpu);
         vitis::ai::OpenPoseResult result = model->run(image);
+        lock_dpu.unlock();
 
         std::unique_lock<std::mutex> lock_result(data->mtx_result);
         data->result.push(result);
@@ -184,6 +187,7 @@ int main(int argc, char *argv[]) {
     io_service service;
     ip::tcp::endpoint endpoint(ip::tcp::v4(), port);
     ip::tcp::acceptor acceptor(service, endpoint);
+    std::cout << "Launched pose estimation server" << std::endl;
 
     while (true) {
         ip::tcp::socket sock(service);
@@ -194,11 +198,11 @@ int main(int argc, char *argv[]) {
         FrameInfo *data = new FrameInfo(cv::Mat(), std::move(sock));
 
         std::thread tcp_recv_thread(tcp_recv, data);
-        std::thread face_detect_thread(face_detect, data);
+        std::thread pose_estimate_thread(pose_estimate, data);
         std::thread tcp_send_thread(tcp_send, data);
 
         tcp_recv_thread.detach();
-        face_detect_thread.detach();
+        pose_estimate_thread.detach();
         tcp_send_thread.detach();
     }
     return 0;

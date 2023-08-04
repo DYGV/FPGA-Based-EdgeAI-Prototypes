@@ -52,6 +52,7 @@ struct FrameInfo {
 };
 
 std::unique_ptr<vitis::ai::FaceDetect> model;
+std::mutex mtx_dpu;
 
 void face_detect(FrameInfo *data) {
     while (true) {
@@ -62,7 +63,10 @@ void face_detect(FrameInfo *data) {
         data->image_in.pop();
         lock_in.unlock();
 
+
+        std::unique_lock<std::mutex> lock_dpu(mtx_dpu);
         vitis::ai::FaceDetectResult result = model->run(image);
+        lock_dpu.unlock();
 
         std::unique_lock<std::mutex> lock_result(data->mtx_result);
         data->result.push(result);
@@ -179,6 +183,7 @@ int main(int argc, char *argv[]) {
     io_service service;
     ip::tcp::endpoint endpoint(ip::tcp::v4(), port);
     ip::tcp::acceptor acceptor(service, endpoint);
+    std::cout << "Launched face detection server" << std::endl;
 
     while (true) {
         ip::tcp::socket sock(service);
