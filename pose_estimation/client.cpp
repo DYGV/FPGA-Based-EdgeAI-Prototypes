@@ -63,7 +63,7 @@ struct FrameInfo {
 
 void send_frame(FrameInfo *data) {
     size_t recv_count = 0;
-    while (++recv_count != data->frame_count) {
+    while (++recv_count <= data->frame_count) {
         std::this_thread::sleep_for(
             std::chrono::milliseconds(SLEEP_SEND_FRAME));
         std::unique_lock<std::mutex> lock_in(data->mtx_in);
@@ -87,7 +87,7 @@ void send_frame(FrameInfo *data) {
 
 void recv_result(FrameInfo *data) {
     size_t recv_count = 0;
-    while (++recv_count != data->frame_count) {
+    while (++recv_count <= data->frame_count) {
         size_t result_size;
         boost::asio::read(data->socket, boost::asio::buffer(
                                             &result_size, sizeof(std::size_t)));
@@ -104,7 +104,7 @@ void recv_result(FrameInfo *data) {
 
 void show_result(FrameInfo *data) {
     size_t recv_count = 0;
-    while (++recv_count != data->frame_count) {
+    while (++recv_count <= data->frame_count) {
         std::unique_lock<std::mutex> lock_result(data->mtx_result);
         bool available = data->cv_result.wait_for(
             lock_result, std::chrono::milliseconds(CV_TIMEOUT),
