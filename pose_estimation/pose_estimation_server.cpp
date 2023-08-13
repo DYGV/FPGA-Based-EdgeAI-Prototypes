@@ -42,9 +42,9 @@ struct FrameInfo {
           result(std::queue<vitis::ai::OpenPoseResult>()),
           socket(std::move(sock)) {}
 
-    ip::tcp::socket socket;
     std::queue<cv::Mat> image_in;
     std::queue<vitis::ai::OpenPoseResult> result;
+    ip::tcp::socket socket;
     std::mutex mtx_in;
     std::mutex mtx_result;
     std::condition_variable cv_in;

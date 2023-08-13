@@ -43,7 +43,6 @@ struct FrameInfo {
 std::unique_ptr<vitis::ai::OpenPose> model;
 
 void pose_estimate(FrameInfo *data) {
-    unsigned long frame_count = 0;
     while (!data->stop) {
         std::unique_lock<std::mutex> lock_in(data->mtx_in);
         data->cv_in.wait_for(lock_in, std::chrono::milliseconds(500),

@@ -92,7 +92,7 @@ void recv_result(FrameInfo *data) {
         boost::asio::read(data->socket, boost::asio::buffer(
                                             &result_size, sizeof(std::size_t)));
         std::string result_data(result_size, '\0');
-        size_t len = boost::asio::read(
+        boost::asio::read(
             data->socket, boost::asio::buffer(&result_data[0], result_size));
         boost::json::value result_json = boost::json::parse(result_data);
         std::unique_lock<std::mutex> lock_result(data->mtx_result);
@@ -139,26 +139,25 @@ void show_result(FrameInfo *data) {
             {1, 8}, {8, 9}, {9, 10}, {1, 11}, {11, 12}, {12, 13}};
         auto result_poses = result_json.at("poses");
         for (const auto &outer_pair : result_poses.as_object()) {
-            const auto &outer_key = outer_pair.key();
             const auto &outer_value = outer_pair.value();
             cv::Point2f pose_points[14];
             int i = 0;
+	    int type = 0;
             for (const auto &middle_pair : outer_value.as_object()) {
-                const auto &middle_key = middle_pair.key();
                 const auto &middle_value = middle_pair.value();
                 double x = middle_value.at("x").as_double();
                 double y = middle_value.at("y").as_double();
-                int type = middle_value.at("type").as_int64();
+                type = middle_value.at("type").as_int64();
                 cv::Point2f point2f(x, y);
                 pose_points[i++] = point2f;
-                if (point2f != cv::Point2f(0, 0)) {
+                if (type == 1 && point2f != cv::Point2f(0, 0)) {
                     cv::circle(frame, point2f, 5, cv::Scalar(0, 255, 0), -1);
                 }
             }
             for (size_t i = 0; i < limb_seq.size(); ++i) {
                 cv::Point2f a = pose_points[limb_seq[i][0]];
                 cv::Point2f b = pose_points[limb_seq[i][1]];
-                if (a != cv::Point2f(0, 0) && b != cv::Point2f(0, 0)) {
+                if (type == 1 && a != cv::Point2f(0, 0) && b != cv::Point2f(0, 0)) {
                     cv::line(frame, a, b, cv::Scalar(255, 0, 0), 3, 4);
                 }
             }

@@ -92,7 +92,7 @@ void recv_result(FrameInfo *data) {
         boost::asio::read(data->socket, boost::asio::buffer(
                                             &result_size, sizeof(std::size_t)));
         std::string result_data(result_size, '\0');
-        size_t len = boost::asio::read(
+        boost::asio::read(
             data->socket, boost::asio::buffer(&result_data[0], result_size));
         boost::json::value result_json = boost::json::parse(result_data);
         std::unique_lock<std::mutex> lock_result(data->mtx_result);
