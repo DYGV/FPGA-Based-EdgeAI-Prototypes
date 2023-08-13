@@ -189,7 +189,7 @@ int main(int argc, char *argv[]) {
         ip::tcp::socket sock(service);
         acceptor.accept(sock);
         std::cout << "New client: "
-                  << sock.remote_endpoint().address().to_string() << std::endl;
+                  << sock.remote_endpoint() << std::endl;
 
         FrameInfo *data = new FrameInfo(cv::Mat(), std::move(sock));
 
