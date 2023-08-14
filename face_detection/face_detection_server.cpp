@@ -1,12 +1,12 @@
 /*
  * Copyright 2023 Eisuke Okazaki
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *  http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -34,35 +34,44 @@
 #define CHANNEL 3
 #define FRAME_SIZE WIDTH *HEIGHT *CHANNEL
 
-using namespace boost::asio;
-
 struct FrameInfo {
-    FrameInfo(cv::Mat img, ip::tcp::socket sock)
+    FrameInfo(cv::Mat img, boost::asio::ip::tcp::socket sock)
         : image_in(std::queue<cv::Mat>()),
           result(std::queue<vitis::ai::FaceDetectResult>()),
-          socket(std::move(sock)) {}
+          socket(std::move(sock)), already_stopped(false) {}
 
     std::queue<cv::Mat> image_in;
     std::queue<vitis::ai::FaceDetectResult> result;
-    ip::tcp::socket socket;
+    boost::asio::ip::tcp::socket socket;
     std::mutex mtx_in;
     std::mutex mtx_result;
     std::condition_variable cv_in;
     std::condition_variable cv_result;
+    bool already_stopped;
 };
 
 std::unique_ptr<vitis::ai::FaceDetect> model;
 std::mutex mtx_dpu;
 
-void face_detect(FrameInfo *data) {
+void face_detect(std::shared_ptr<FrameInfo> data) {
     while (true) {
         std::unique_lock<std::mutex> lock_in(data->mtx_in);
-        data->cv_in.wait(lock_in, [&data] { return !data->image_in.empty(); });
+        data->cv_in.wait_for(lock_in, std::chrono::milliseconds(5000),
+                             [&data] { return !data->image_in.empty(); });
+        if (data->image_in.empty()) {
+            lock_in.unlock();
+            data->cv_in.notify_one();
+            if (data->already_stopped) {
+                return;
+            } else {
+                continue;
+            }
+        }
 
         cv::Mat image = data->image_in.front();
         data->image_in.pop();
         lock_in.unlock();
-
+        data->cv_in.notify_one();
 
         std::unique_lock<std::mutex> lock_dpu(mtx_dpu);
         vitis::ai::FaceDetectResult result = model->run(image);
@@ -93,13 +102,20 @@ std::string result_to_json_string(const vitis::ai::FaceDetectResult &result) {
     return serialized_data;
 }
 
-void tcp_send(FrameInfo *data) {
-    io_service service;
-
+void tcp_send(std::shared_ptr<FrameInfo> data) {
     while (true) {
         std::unique_lock<std::mutex> lock_result(data->mtx_result);
-        data->cv_result.wait(lock_result,
-                             [&data] { return !data->result.empty(); });
+        data->cv_result.wait_for(lock_result, std::chrono::milliseconds(5000),
+                                 [&data] { return !data->result.empty(); });
+        if (data->result.empty()) {
+            lock_result.unlock();
+            data->cv_result.notify_one();
+            if (data->already_stopped) {
+                return;
+            } else {
+                continue;
+            }
+        }
 
         vitis::ai::FaceDetectResult result = data->result.front();
         data->result.pop();
@@ -110,59 +126,41 @@ void tcp_send(FrameInfo *data) {
         std::string serialized_data = result_to_json_string(result);
         std::size_t data_size = serialized_data.size();
 
-        try {
-            async_write(data->socket, buffer(&data_size, sizeof(std::size_t)),
-                        [](const boost::system::error_code &ec, size_t) {
-                            if (ec) {
-                                std::cerr
-                                    << "Error sending image: " << ec.message()
-                                    << std::endl;
-                            }
-                        });
+        async_write(data->socket,
+                    boost::asio::buffer(&data_size, sizeof(std::size_t)),
+                    [&data](const boost::system::error_code &ec, size_t) {
+                        if (ec) {
+                            std::cerr << "Error sending image: " << ec.message()
+                                      << std::endl;
+                            data->already_stopped = true;
+                        }
+                    });
 
-            async_write(data->socket, buffer(serialized_data, data_size),
-                        [](const boost::system::error_code &ec, size_t) {
-                            if (ec) {
-                                std::cerr
-                                    << "Error sending image: " << ec.message()
-                                    << std::endl;
-                            }
-                        });
-        } catch (std::exception &e) {
-            std::cerr << "Exception: " << e.what() << std::endl;
-        }
+        async_write(data->socket,
+                    boost::asio::buffer(serialized_data, data_size),
+                    [&data](const boost::system::error_code &ec, size_t) {
+                        if (ec) {
+                            std::cerr << "Error sending image: " << ec.message()
+                                      << std::endl;
+                            data->already_stopped = true;
+                        }
+                    });
     }
 }
 
-void tcp_recv(FrameInfo *data) {
+void tcp_recv(std::shared_ptr<FrameInfo> data) {
     while (true) {
         boost::system::error_code ec;
         uchar buf[FRAME_SIZE];
-        int bytes_received = 0;
-        while (bytes_received < FRAME_SIZE) {
-            boost::system::error_code error;
-            try {
-                int ret = data->socket.read_some(
-                    boost::asio::buffer(buf + bytes_received,
-                                        FRAME_SIZE - bytes_received),
-                    error);
-                if (error) {
-                    std::cerr
-                        << "Error while receiving data: " << error.message()
-                        << std::endl;
 
-                    return;
-                }
-                if (ret == 0) {
-                    std::cout << "Client disconnected" << std::endl;
-                    return;
-                }
-
-                bytes_received += ret;
-            } catch (std::exception &e) {
-                std::cerr << "Exception in handleClient: " << e.what()
-                          << std::endl;
-            }
+        boost::system::error_code error;
+        boost::asio::read(data->socket, boost::asio::buffer(buf, FRAME_SIZE),
+                          error);
+        if (error) {
+            std::cerr << "Error while receiving data: " << error.message()
+                      << std::endl;
+            data->already_stopped = true;
+            return;
         }
         cv::Mat image = cv::Mat(HEIGHT, WIDTH, CV_8UC3, buf);
         std::unique_lock<std::mutex> lock_in(data->mtx_in);
@@ -172,35 +170,41 @@ void tcp_recv(FrameInfo *data) {
     }
 }
 
+void client_handler(boost::asio::ip::tcp::socket socket) {
+    auto client_addr = socket.remote_endpoint();
+    auto client_data =
+        std::make_shared<FrameInfo>(cv::Mat(), std::move(socket));
+    std::thread tcp_recv_thread(tcp_recv, client_data);
+    std::thread face_detect_thread(face_detect, client_data);
+    std::thread tcp_send_thread(tcp_send, client_data);
+
+    tcp_recv_thread.join();
+    face_detect_thread.join();
+    tcp_send_thread.join();
+    std::cout << "Connection to " << client_addr << " is now fully closed"
+              << std::endl;
+}
+
 int main(int argc, char *argv[]) {
     std::string model_ = argv[1];
     int port = DEFAULT_PORT;
     if (argc > 2) {
         port = std::stoi(argv[2]);
     }
+
     model = vitis::ai::FaceDetect::create(model_);
 
-    io_service service;
-    ip::tcp::endpoint endpoint(ip::tcp::v4(), port);
-    ip::tcp::acceptor acceptor(service, endpoint);
+    boost::asio::io_service service;
+    boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), port);
+    boost::asio::ip::tcp::acceptor acceptor(service, endpoint);
     std::cout << "Launched face detection server" << std::endl;
 
     while (true) {
-        ip::tcp::socket sock(service);
+        boost::asio::ip::tcp::socket sock(service);
         acceptor.accept(sock);
-        std::cout << "New client: "
-                  << sock.remote_endpoint() << std::endl;
-
-        FrameInfo *data = new FrameInfo(cv::Mat(), std::move(sock));
-
-        std::thread tcp_recv_thread(tcp_recv, data);
-        std::thread face_detect_thread(face_detect, data);
-        std::thread tcp_send_thread(tcp_send, data);
-
-        tcp_recv_thread.detach();
-        face_detect_thread.detach();
-        tcp_send_thread.detach();
+        std::cout << "New client: " << sock.remote_endpoint() << std::endl;
+        std::thread client_handler_thread(client_handler, std::move(sock));
+        client_handler_thread.detach();
     }
     return 0;
 }
-
