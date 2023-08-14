@@ -27,12 +27,13 @@
 
 #define CV_TIMEOUT 5000
 #define SLEEP_SEND_FRAME 300
+#define JPEG_QUALITY 80
 
 using namespace boost::asio;
 
 struct FrameInfo {
     FrameInfo(cv::Mat img, ip::tcp::socket sock, std::string video_file)
-        : image_in(std::queue<cv::Mat>()), socket(std::move(sock)) {
+        : socket(std::move(sock)) {
         cap.open(video_file);
         if (!cap.isOpened()) {
             exit(1);
@@ -47,7 +48,7 @@ struct FrameInfo {
         }
     }
 
-    std::queue<cv::Mat> image_in;
+    std::queue<std::vector<uchar>> image_in;
     std::queue<boost::json::value> result;
     std::queue<cv::Mat> image_in_;
     std::mutex mtx_in;
@@ -75,13 +76,15 @@ void send_frame(FrameInfo *data) {
                       << std::endl;
             break;
         }
-        cv::Mat frame = data->image_in.front();
+        std::vector<uchar> frame = data->image_in.front();
         data->image_in.pop();
         lock_in.unlock();
         data->cv_in.notify_one();
-        std::size_t frame_size = frame.total() * frame.elemSize();
+        std::size_t frame_size = frame.size();
+        boost::asio::write(data->socket, boost::asio::buffer(
+                                             &frame_size, sizeof(std::size_t)));
         boost::asio::write(data->socket,
-                           boost::asio::buffer(frame.data, frame_size));
+                           boost::asio::buffer(frame, frame.size()));
     }
 }
 
@@ -91,9 +94,10 @@ void recv_result(FrameInfo *data) {
         size_t result_size;
         boost::asio::read(data->socket, boost::asio::buffer(
                                             &result_size, sizeof(std::size_t)));
+
         std::string result_data(result_size, '\0');
-        boost::asio::read(
-            data->socket, boost::asio::buffer(&result_data[0], result_size));
+        boost::asio::read(data->socket,
+                          boost::asio::buffer(&result_data[0], result_size));
         boost::json::value result_json = boost::json::parse(result_data);
         std::unique_lock<std::mutex> lock_result(data->mtx_result);
         data->result.push(result_json);
@@ -142,7 +146,7 @@ void show_result(FrameInfo *data) {
             const auto &outer_value = outer_pair.value();
             cv::Point2f pose_points[14];
             int i = 0;
-	    int type = 0;
+            int type = 0;
             for (const auto &middle_pair : outer_value.as_object()) {
                 const auto &middle_value = middle_pair.value();
                 double x = middle_value.at("x").as_double();
@@ -157,7 +161,8 @@ void show_result(FrameInfo *data) {
             for (size_t i = 0; i < limb_seq.size(); ++i) {
                 cv::Point2f a = pose_points[limb_seq[i][0]];
                 cv::Point2f b = pose_points[limb_seq[i][1]];
-                if (type == 1 && a != cv::Point2f(0, 0) && b != cv::Point2f(0, 0)) {
+                if (type == 1 && a != cv::Point2f(0, 0) &&
+                    b != cv::Point2f(0, 0)) {
                     cv::line(frame, a, b, cv::Scalar(255, 0, 0), 3, 4);
                 }
             }
@@ -169,6 +174,9 @@ void show_result(FrameInfo *data) {
 }
 
 void read_image(FrameInfo *data) {
+    std::vector<int> param = std::vector<int>(2);
+    param[0] = cv::IMWRITE_JPEG_QUALITY;
+    param[1] = JPEG_QUALITY;
     while (true) {
         cv::Mat frame;
         data->cap >> frame;
@@ -179,8 +187,10 @@ void read_image(FrameInfo *data) {
         if (frame.cols != 368 || frame.rows != 368) {
             cv::resize(frame, frame, cv::Size(368, 368));
         }
+        std::vector<uchar> buff;
+        imencode(".jpg", frame, buff, param);
         std::unique_lock<std::mutex> lock_in(data->mtx_in);
-        data->image_in.push(frame);
+        data->image_in.push(buff);
         lock_in.unlock();
         data->cv_in.notify_one();
 
@@ -212,13 +222,9 @@ int main(int argc, char *argv[]) {
     std::thread show_result_thread(show_result, data);
 
     read_image_thread.join();
-    std::cout << "Joined read_image_thread" << std::endl;
     send_frame_thread.join();
-    std::cout << "Joined send_frame_thread" << std::endl;
     recv_result_thread.join();
-    std::cout << "Joined recv_result_thread" << std::endl;
     show_result_thread.join();
-    std::cout << "Joined show_result_thread" << std::endl;
+    std::cout << "All threads joined" << std::endl;
     return 0;
 }
-

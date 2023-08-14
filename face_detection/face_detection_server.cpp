@@ -29,11 +29,6 @@
 
 #define DEFAULT_PORT 54321
 
-#define WIDTH 640
-#define HEIGHT 360
-#define CHANNEL 3
-#define FRAME_SIZE WIDTH *HEIGHT *CHANNEL
-
 struct FrameInfo {
     FrameInfo(cv::Mat img, boost::asio::ip::tcp::socket sock)
         : image_in(std::queue<cv::Mat>()),
@@ -72,6 +67,10 @@ void face_detect(std::shared_ptr<FrameInfo> data) {
         data->image_in.pop();
         lock_in.unlock();
         data->cv_in.notify_one();
+
+        if (image.rows != 360 && image.cols != 640) {
+            cv::resize(image, image, cv::Size(640, 360));
+        }
 
         std::unique_lock<std::mutex> lock_dpu(mtx_dpu);
         vitis::ai::FaceDetectResult result = model->run(image);
@@ -150,11 +149,13 @@ void tcp_send(std::shared_ptr<FrameInfo> data) {
 
 void tcp_recv(std::shared_ptr<FrameInfo> data) {
     while (true) {
-        boost::system::error_code ec;
-        uchar buf[FRAME_SIZE];
-
         boost::system::error_code error;
-        boost::asio::read(data->socket, boost::asio::buffer(buf, FRAME_SIZE),
+        std::size_t frame_size;
+        boost::asio::read(data->socket,
+                          boost::asio::buffer(&frame_size, sizeof(std::size_t)),
+                          error);
+        std::vector<uchar> buf(frame_size);
+        boost::asio::read(data->socket, boost::asio::buffer(buf, frame_size),
                           error);
         if (error) {
             std::cerr << "Error while receiving data: " << error.message()
@@ -162,7 +163,10 @@ void tcp_recv(std::shared_ptr<FrameInfo> data) {
             data->already_stopped = true;
             return;
         }
-        cv::Mat image = cv::Mat(HEIGHT, WIDTH, CV_8UC3, buf);
+        if(buf.empty()) {
+            return;
+        }
+        cv::Mat image = cv::imdecode(cv::Mat(buf), cv::IMREAD_COLOR);
         std::unique_lock<std::mutex> lock_in(data->mtx_in);
         data->image_in.push(image);
         lock_in.unlock();
