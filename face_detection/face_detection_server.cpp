@@ -91,10 +91,10 @@ std::string result_to_json_string(const vitis::ai::FaceDetectResult &result) {
     int num = 0;
     for (const auto &r : result.rects) {
         boost::json::object result_json_pos;
-        result_json_pos["x"] = int(r.x * result.width);
-        result_json_pos["y"] = int(r.y * result.height);
-        result_json_pos["size_col"] = int(r.width * result.width);
-        result_json_pos["size_row"] = int(r.height * result.height);
+        result_json_pos["x"] = static_cast<int>((r.x < 0 ? 0 : r.x) * result.width);
+        result_json_pos["y"] = static_cast<int>((r.y < 0 ? 0 : r.y) * result.height);
+        result_json_pos["size_col"] = static_cast<int>(r.width * result.width);
+        result_json_pos["size_row"] = static_cast<int>(r.height * result.height);
         result_json[std::to_string(++num)] = std::move(result_json_pos);
     }
     std::string serialized_data = boost::json::serialize(result_json);
